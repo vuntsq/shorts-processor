@@ -1,0 +1,13 @@
+{
+  "name": "shorts-pipeline",
+  "version": "1.0.0",
+  "description": "iPhone-only YouTube Shorts video processing pipeline",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
