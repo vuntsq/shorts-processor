@@ -1,0 +1,111 @@
+# ============================================================
+# .github/workflows/process-clip.yml
+# YouTube Shorts Processing Pipeline
+# ============================================================
+# Triggered manually from GitHub Mobile or the browser.
+# You supply the URL of a Release asset (your raw game clip).
+# The workflow downloads it, runs FFmpeg, and uploads the
+# processed video + SEO text as downloadable artifacts.
+# ============================================================
+
+name: Process Gaming Clip
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        description: "Direct URL to your raw clip (GitHub Release asset URL)"
+        required: true
+        type: string
+      clip_name:
+        description: "Filename for the clip (e.g. cod_crazy_1v3_clutch.mp4)"
+        required: true
+        type: string
+
+jobs:
+  process:
+    name: Encode & Generate SEO
+    runs-on: ubuntu-latest
+
+    # Give the job write permission to read release assets
+    permissions:
+      contents: read
+
+    steps:
+      # ── 1. Check out the repo (gets index.js, config.json, scripts/) ──
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Node.js ─────────────────────────────────────────────
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # ── 3. Install FFmpeg ─────────────────────────────────────────────
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -1
+
+      # ── 4. Create input directory & download clip ─────────────────────
+      - name: Download clip from Release asset URL
+        run: |
+          mkdir -p ./input
+          CLIP_NAME="${{ github.event.inputs.clip_name }}"
+          VIDEO_URL="${{ github.event.inputs.video_url }}"
+
+          echo "⬇️  Downloading: $CLIP_NAME"
+          echo "   From: $VIDEO_URL"
+
+          # curl flags:
+          #   -L  follow redirects (GitHub releases redirect to CDN)
+          #   -o  output file path
+          #   --fail  exit non-zero on HTTP errors
+          #   --retry 3  retry on transient failures
+          curl -L \
+               --fail \
+               --retry 3 \
+               --retry-delay 5 \
+               --progress-bar \
+               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+               -o "./input/${CLIP_NAME}" \
+               "${VIDEO_URL}"
+
+          # Confirm the download succeeded and show file size
+          ls -lh "./input/${CLIP_NAME}"
+
+      # ── 5. Make bash scripts executable ──────────────────────────────
+      - name: Make scripts executable
+        run: chmod +x ./scripts/*.sh
+
+      # ── 6. Run the Node.js pipeline ───────────────────────────────────
+      - name: Run processing pipeline
+        env:
+          INPUT_FILE: "./input/${{ github.event.inputs.clip_name }}"
+        run: node index.js
+
+      # ── 7. List output files (useful for debugging) ───────────────────
+      - name: Show output files
+        run: |
+          echo "── Output directory ──────────────────────────────────"
+          find ./output -type f | xargs ls -lh
+          echo "── SEO preview ───────────────────────────────────────"
+          find ./output -name "seo.txt" -exec cat {} \;
+
+      # ── 8. Upload processed video as artifact ─────────────────────────
+      - name: Upload processed video
+        uses: actions/upload-artifact@v4
+        with:
+          name: processed-video
+          path: ./output/**/video.mp4
+          retention-days: 7   # artifact stays available for 7 days
+
+      # ── 9. Upload SEO text as artifact ────────────────────────────────
+      - name: Upload SEO text
+        uses: actions/upload-artifact@v4
+        with:
+          name: seo-text
+          path: ./output/**/seo.txt
+          retention-days: 7
