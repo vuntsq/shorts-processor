@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       clip_name:
-        description: "Clip name without extension (e.g. cod_crazy_1v3_clutch)"
+        description: "Comma-separated clip names without extension (e.g. cod_crazy_1v3_clutch, apex_solo_win)"
         required: true
         type: string
 
@@ -44,35 +44,49 @@ jobs:
           sudo apt-get install -y ffmpeg
           ffmpeg -version | head -1
 
-      # ── 4. Create input directory & download clip ─────────────────────
-      - name: Download clip from Release asset
+      # ── 4. Create input directory & download clips ────────────────────
+      - name: Download clips from Release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p ./input
-          CLIP_NAME="${{ github.event.inputs.clip_name }}"
+          RESOLVED_NAMES=""
 
-          # Default to .mov if no extension provided — iOS always records .mov
-          if [[ "$CLIP_NAME" != *.* ]]; then
-            CLIP_NAME="${CLIP_NAME}.mov"
-            echo "   No extension given, defaulting to .mov"
-          fi
+          IFS=',' read -ra CLIPS <<< "${{ github.event.inputs.clip_name }}"
+          for RAW in "${CLIPS[@]}"; do
+            CLIP_NAME="$(echo "${RAW}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
 
-          echo "⬇️  Downloading: $CLIP_NAME"
+            # Skip empty entries (e.g. from trailing commas)
+            [ -z "$CLIP_NAME" ] && continue
 
-          # gh release download handles private repo auth correctly.
-          # It fetches the asset by filename from the "clips" release tag
-          # without forwarding auth headers to the S3 CDN (which causes 404s with curl).
-          gh release download clips \
-            --repo ${{ github.repository }} \
-            --pattern "${CLIP_NAME}" \
-            --dir ./input
+            # Default to .mov if no extension provided — iOS always records .mov
+            if [[ "$CLIP_NAME" != *.* ]]; then
+              CLIP_NAME="${CLIP_NAME}.mov"
+              echo "   No extension given, defaulting to .mov → ${CLIP_NAME}"
+            fi
 
-          # Confirm the download succeeded and show file size
-          ls -lh "./input/${CLIP_NAME}"
+            echo "⬇️  Downloading: $CLIP_NAME"
 
-          # Export the resolved name so subsequent steps use the correct filename
-          echo "CLIP_NAME=${CLIP_NAME}" >> $GITHUB_ENV
+            # gh release download handles private repo auth correctly.
+            # It fetches the asset by filename from the "clips" release tag
+            # without forwarding auth headers to the S3 CDN (which causes 404s with curl).
+            gh release download clips \
+              --repo ${{ github.repository }} \
+              --pattern "${CLIP_NAME}" \
+              --dir ./input
+
+            # Confirm the download succeeded and show file size
+            ls -lh "./input/${CLIP_NAME}"
+
+            if [ -n "$RESOLVED_NAMES" ]; then
+              RESOLVED_NAMES="${RESOLVED_NAMES},${CLIP_NAME}"
+            else
+              RESOLVED_NAMES="${CLIP_NAME}"
+            fi
+          done
+
+          # Export the resolved names so subsequent steps use the correct filenames
+          echo "RESOLVED_CLIP_NAMES=${RESOLVED_NAMES}" >> $GITHUB_ENV
 
       # ── 5. Make bash scripts executable ──────────────────────────────
       - name: Make scripts executable
@@ -80,9 +94,16 @@ jobs:
 
       # ── 6. Run the Node.js pipeline ───────────────────────────────────
       - name: Run processing pipeline
-        env:
-          INPUT_FILE: "./input/${{ env.CLIP_NAME }}"
-        run: node index.js
+        run: |
+          IFS=',' read -ra CLIPS <<< "$RESOLVED_CLIP_NAMES"
+          for CLIP_NAME in "${CLIPS[@]}"; do
+            echo "🎬  Processing: ${CLIP_NAME}"
+            if [ ! -f "./input/${CLIP_NAME}" ]; then
+              echo "❌  Input file not found: ./input/${CLIP_NAME}"
+              exit 1
+            fi
+            INPUT_FILE="./input/${CLIP_NAME}" node index.js
+          done
 
       # ── 7. List output files (useful for debugging) ───────────────────
       - name: Show output files
