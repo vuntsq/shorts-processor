@@ -92,18 +92,10 @@ jobs:
           echo "── SEO preview ───────────────────────────────────────"
           find ./output -name "seo.txt" -exec cat {} \;
 
-      # ── 8. Upload processed video as artifact ─────────────────────────
+      # ── 8. Upload processed video and SEO text as a single artifact ──────
       - name: Upload processed video
         uses: actions/upload-artifact@v4
         with:
           name: processed-video
-          path: ./output/**/video.mp4
-          retention-days: 7
-
-      # ── 9. Upload SEO text as artifact ────────────────────────────────
-      - name: Upload SEO text
-        uses: actions/upload-artifact@v4
-        with:
-          name: seo-text
-          path: ./output/**/seo.txt
+          path: ./output/
           retention-days: 7
