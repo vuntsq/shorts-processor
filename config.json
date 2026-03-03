@@ -3,6 +3,6 @@
   "outputFolder": "./output",
   "games": {
     "cod":   "./scripts/cod.sh",
-    "forza": "./scripts/forza.sh",
+    "forza": "./scripts/forza.sh"
   }
 }
