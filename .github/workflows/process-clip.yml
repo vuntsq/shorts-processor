@@ -3,9 +3,9 @@
 # YouTube Shorts Processing Pipeline
 # ============================================================
 # Triggered manually from GitHub Mobile or the browser.
-# You supply the URL of a Release asset (your raw game clip).
-# The workflow downloads it, runs FFmpeg, and uploads the
-# processed video + SEO text as downloadable artifacts.
+# You supply the filename of a Release asset (your raw game clip).
+# The workflow downloads it from the "clips" release, runs FFmpeg,
+# and uploads the processed video + SEO text as downloadable artifacts.
 # ============================================================
 
 name: Process Gaming Clip
@@ -13,12 +13,8 @@ name: Process Gaming Clip
 on:
   workflow_dispatch:
     inputs:
-      video_url:
-        description: "Direct URL to your raw clip (GitHub Release asset URL)"
-        required: true
-        type: string
       clip_name:
-        description: "Filename for the clip (e.g. cod_crazy_1v3_clutch.mp4)"
+        description: "Clip name without extension (e.g. cod_crazy_1v3_clutch)"
         required: true
         type: string
 
@@ -27,7 +23,6 @@ jobs:
     name: Encode & Generate SEO
     runs-on: ubuntu-latest
 
-    # Give the job write permission to read release assets
     permissions:
       contents: read
 
@@ -50,31 +45,34 @@ jobs:
           ffmpeg -version | head -1
 
       # ── 4. Create input directory & download clip ─────────────────────
-      - name: Download clip from Release asset URL
+      - name: Download clip from Release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p ./input
           CLIP_NAME="${{ github.event.inputs.clip_name }}"
-          VIDEO_URL="${{ github.event.inputs.video_url }}"
+
+          # Default to .mov if no extension provided — iOS always records .mov
+          if [[ "$CLIP_NAME" != *.* ]]; then
+            CLIP_NAME="${CLIP_NAME}.mov"
+            echo "   No extension given, defaulting to .mov"
+          fi
 
           echo "⬇️  Downloading: $CLIP_NAME"
-          echo "   From: $VIDEO_URL"
 
-          # curl flags:
-          #   -L  follow redirects (GitHub releases redirect to CDN)
-          #   -o  output file path
-          #   --fail  exit non-zero on HTTP errors
-          #   --retry 3  retry on transient failures
-          curl -L \
-               --fail \
-               --retry 3 \
-               --retry-delay 5 \
-               --progress-bar \
-               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-               -o "./input/${CLIP_NAME}" \
-               "${VIDEO_URL}"
+          # gh release download handles private repo auth correctly.
+          # It fetches the asset by filename from the "clips" release tag
+          # without forwarding auth headers to the S3 CDN (which causes 404s with curl).
+          gh release download clips \
+            --repo ${{ github.repository }} \
+            --pattern "${CLIP_NAME}" \
+            --dir ./input
 
           # Confirm the download succeeded and show file size
           ls -lh "./input/${CLIP_NAME}"
+
+          # Export the resolved name so subsequent steps use the correct filename
+          echo "CLIP_NAME=${CLIP_NAME}" >> $GITHUB_ENV
 
       # ── 5. Make bash scripts executable ──────────────────────────────
       - name: Make scripts executable
@@ -83,7 +81,7 @@ jobs:
       # ── 6. Run the Node.js pipeline ───────────────────────────────────
       - name: Run processing pipeline
         env:
-          INPUT_FILE: "./input/${{ github.event.inputs.clip_name }}"
+          INPUT_FILE: "./input/${{ env.CLIP_NAME }}"
         run: node index.js
 
       # ── 7. List output files (useful for debugging) ───────────────────
@@ -100,7 +98,7 @@ jobs:
         with:
           name: processed-video
           path: ./output/**/video.mp4
-          retention-days: 7   # artifact stays available for 7 days
+          retention-days: 7
 
       # ── 9. Upload SEO text as artifact ────────────────────────────────
       - name: Upload SEO text
