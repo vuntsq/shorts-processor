@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       clip_name:
-        description: "Filename for the clip (e.g. cod_crazy_1v3_clutch.mp4 or .mov)"
+        description: "Clip name without extension (e.g. cod_crazy_1v3_clutch)"
         required: true
         type: string
 
@@ -23,7 +23,6 @@ jobs:
     name: Encode & Generate SEO
     runs-on: ubuntu-latest
 
-    # Give the job write permission to read release assets
     permissions:
       contents: read
 
@@ -53,6 +52,12 @@ jobs:
           mkdir -p ./input
           CLIP_NAME="${{ github.event.inputs.clip_name }}"
 
+          # Default to .mov if no extension provided — iOS always records .mov
+          if [[ "$CLIP_NAME" != *.* ]]; then
+            CLIP_NAME="${CLIP_NAME}.mov"
+            echo "   No extension given, defaulting to .mov"
+          fi
+
           echo "⬇️  Downloading: $CLIP_NAME"
 
           # gh release download handles private repo auth correctly.
@@ -66,6 +71,9 @@ jobs:
           # Confirm the download succeeded and show file size
           ls -lh "./input/${CLIP_NAME}"
 
+          # Export the resolved name so subsequent steps use the correct filename
+          echo "CLIP_NAME=${CLIP_NAME}" >> $GITHUB_ENV
+
       # ── 5. Make bash scripts executable ──────────────────────────────
       - name: Make scripts executable
         run: chmod +x ./scripts/*.sh
@@ -73,7 +81,7 @@ jobs:
       # ── 6. Run the Node.js pipeline ───────────────────────────────────
       - name: Run processing pipeline
         env:
-          INPUT_FILE: "./input/${{ github.event.inputs.clip_name }}"
+          INPUT_FILE: "./input/${{ env.CLIP_NAME }}"
         run: node index.js
 
       # ── 7. List output files (useful for debugging) ───────────────────
