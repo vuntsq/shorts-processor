@@ -8,7 +8,7 @@
 #
 # What this does:
 #   1. Scales source to fill 1080×1920 background, blurs & dims it
-#   2. Scales the original video to fit within 1080×1458 (pillarbox-safe)
+#   2. Scales the original video to fit within 1080×1531 (pillarbox-safe)
 #   3. Overlays the sharp video centred on the blurred background
 #   4. Encodes H.264 at CRF 12 (high quality), 60fps, AAC audio
 # ============================================================
@@ -28,7 +28,7 @@ ffmpeg \
   -filter_complex "
     [0:v]scale=1080:1920,setsar=1[bg];
     [bg]boxblur=10:2,eq=brightness=-0.15[blurred];
-    [0:v]scale=-1:1458[main];
+    [0:v]scale=-1:1531[main];
     [blurred][main]overlay=(1080-w)/2:(1920-h)/2[out]
   " \
   -map "[out]" \
