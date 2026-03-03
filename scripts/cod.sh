@@ -28,7 +28,7 @@ ffmpeg \
   -filter_complex "
     [0:v]scale=1080:1920,setsar=1[bg];
     [bg]boxblur=10:2,eq=brightness=-0.15[blurred];
-    [0:v]scale=-1:1531[main];
+    [0:v]scale=-1:1385[main];
     [blurred][main]overlay=(1080-w)/2:(1920-h)/2[out]
   " \
   -map "[out]" \
